@@ -201,8 +201,29 @@ $(document).ready(function () {
 <p>Remove NA’s from the training data rows.<br />
 Data columns: Not all variables in the testing data have values. Adjust training data accordingly, i.e. delete the variables from the training data that have no entry in the testing data.<br />
 There are 160 variables in the training and testing data, not all are important. Use reprocessing with principle components to reduce the number of variables (down to 14).</p>
+<pre class="r"><code>library(caret)</code></pre>
 <pre><code>## Loading required package: lattice</code></pre>
 <pre><code>## Loading required package: ggplot2</code></pre>
+<pre class="r"><code>library(rpart)
+
+setwd(&quot;C:/Users/chenmaye/Documents&quot;)
+p.training&lt;-read.csv(&quot;pml-training.csv&quot;) #19622 rows, 160 columns
+p.testing&lt;-read.csv(&quot;pml-testing.csv&quot;)
+
+#clean up
+p.training1&lt;-na.omit(p.training) #down to 406 rows, but still 160 columns. The last column is classe.
+
+p.testing1&lt;-na.omit(p.testing) #this omits rows
+
+p.testing1&lt;-p.testing[ , ! apply( p.testing , 2 , function(x) all(is.na(x)) ) ] #remove NA columns, down to 60 columns
+
+p.training2&lt;-p.training1[,names(p.training1) %in% names(p.testing1)] #keep only the same columns in the testing data, down to 59 columns
+
+preProc&lt;-preProcess(p.training2,method=&quot;pca&quot;,thresh=0.8) #the last column is classe
+
+p.training2PC&lt;-predict(preProc,p.training2) #generate PC for training data, down to 14 variables
+
+p.training2PC.use&lt;-p.training2PC[,grepl(&quot;PC&quot;,names(p.training2PC))] #cut out the non &quot;PCx&quot; columns</code></pre>
 </div>
 <div id="working-with-training-data" class="section level2">
 <h2>2. Working with training data</h2>
@@ -211,13 +232,22 @@ There are 160 variables in the training and testing data, not all are important.
 </em>“rpart” function with “class” method from package “rpart”</p>
 <div id="use-train-function-without-k-fold-cross-validation" class="section level3">
 <h3>2.1 use “train” function, without k-fold cross validation:</h3>
+<pre class="r"><code>#traning
+set.seed(123) 
+message(&quot;single fold (not breaking up the training set to k-fold)&quot;)</code></pre>
 <pre><code>## single fold (not breaking up the training set to k-fold)</code></pre>
+<pre class="r"><code>modelFit &lt;- train(x = p.training2PC.use, y = p.training1$classe,method = &quot;knn&quot;) 
+training2.pred&lt;-predict(modelFit,p.training2PC.use)
+message(&quot;Accuracy:&quot;)</code></pre>
 <pre><code>## Accuracy:</code></pre>
+<pre class="r"><code>confusionMatrix(p.training1$classe,training2.pred)[[3]]</code></pre>
 <pre><code>##       Accuracy          Kappa  AccuracyLower  AccuracyUpper   AccuracyNull 
 ##   7.610837e-01   6.996469e-01   7.165547e-01   8.017601e-01   2.684729e-01 
 ## AccuracyPValue  McnemarPValue 
 ##   1.065173e-94   1.444851e-03</code></pre>
+<pre class="r"><code>message(&quot;original data:&quot;)</code></pre>
 <pre><code>## original data:</code></pre>
+<pre class="r"><code>table(p.training2PC$user_name,p.training1$classe) #original data</code></pre>
 <pre><code>##           
 ##             A  B  C  D  E
 ##   adelmo   24 15 14  8 22
@@ -226,7 +256,9 @@ There are 160 variables in the training and testing data, not all are important.
 ##   eurico   18  9  7 12  8
 ##   jeremy   19 14 16 16 12
 ##   pedro    15  9  9 11 11</code></pre>
+<pre class="r"><code>message(&quot;model prediction rpart&quot;)</code></pre>
 <pre><code>## model prediction rpart</code></pre>
+<pre class="r"><code>table(p.training2PC$user_name,training2.pred) #outcome from the single model prediction with method &quot;class&quot;</code></pre>
 <pre><code>##           training2.pred
 ##             A  B  C  D  E
 ##   adelmo   26 16 15 10 16
@@ -238,14 +270,24 @@ There are 160 variables in the training and testing data, not all are important.
 </div>
 <div id="train-function-still-without-cross-validation-treating-the-object-as-a-formula-class.-this-should-be-identical-to-the-above-just-trying-to-understand-the-semantics." class="section level3">
 <h3>2.2 “train” function, still without cross validation, treating the object as a “formula class”. This should be identical to the above, just trying to understand the semantics.</h3>
+<pre class="r"><code>set.seed(123) 
+message(&quot;the above can also be used in the formula form:&quot;)</code></pre>
 <pre><code>## the above can also be used in the formula form:</code></pre>
+<pre class="r"><code>p.training2PC.use.for&lt;-data.frame(&quot;classe&quot;=p.training1$classe,p.training2PC.use) #put in the same data frame so that the formula form can be used
+modelFit.for &lt;- train(classe~., data = p.training2PC.use.for, method = &quot;knn&quot;) 
+message(&quot;this is a formula class, it doesn't accept trControl, so no effect on the k-fold.&quot;)</code></pre>
 <pre><code>## this is a formula class, it doesn't accept trControl, so no effect on the k-fold.</code></pre>
+<pre class="r"><code>training2.for.pred&lt;-predict(modelFit.for,p.training2PC.use.for)
+message(&quot;Accuracy:&quot;)</code></pre>
 <pre><code>## Accuracy:</code></pre>
+<pre class="r"><code>confusionMatrix(p.training1$classe,training2.for.pred)[[3]]</code></pre>
 <pre><code>##       Accuracy          Kappa  AccuracyLower  AccuracyUpper   AccuracyNull 
 ##   7.610837e-01   6.996469e-01   7.165547e-01   8.017601e-01   2.684729e-01 
 ## AccuracyPValue  McnemarPValue 
 ##   1.065173e-94   1.444851e-03</code></pre>
+<pre class="r"><code>message(&quot;#outcome from the single model prediction with method class&quot;)</code></pre>
 <pre><code>## #outcome from the single model prediction with method class</code></pre>
+<pre class="r"><code>table(p.training2PC$user_name,training2.for.pred) </code></pre>
 <pre><code>##           training2.for.pred
 ##             A  B  C  D  E
 ##   adelmo   26 16 15 10 16
@@ -257,12 +299,27 @@ There are 160 variables in the training and testing data, not all are important.
 </div>
 <div id="training-with-train-function-with-10-fold-cross-validation." class="section level3">
 <h3>2.3 Training with “train” function, with 10-fold cross validation.</h3>
+<pre class="r"><code># names(getModelInfo()) to see a list of methods
+#k-fold=10
+# Define training control
+set.seed(123) 
+train.control &lt;- trainControl(method = &quot;cv&quot;, number = 10) #set up for 10 fold cross validation
+# Train the model
+
+
+modelFitK &lt;- train(x = p.training2PC.use, y = p.training1$classe,method = &quot;knn&quot;,trControl = train.control)
+training2K.pred&lt;-predict(object=modelFitK, newdata=p.training2PC.use)
+message(&quot;Accuracy:&quot;)</code></pre>
 <pre><code>## Accuracy:</code></pre>
+<pre class="r"><code>confusionMatrix(training2K.pred,p.training1$classe)[[3]] # rpart can do this explicitly </code></pre>
 <pre><code>##       Accuracy          Kappa  AccuracyLower  AccuracyUpper   AccuracyNull 
 ##   7.487685e-01   6.841624e-01   7.036261e-01   7.902421e-01   2.684729e-01 
 ## AccuracyPValue  McnemarPValue 
 ##   4.403895e-90   2.132103e-03</code></pre>
+<pre class="r"><code># note: formula form doesn't work with trControl!  So can't do k-fold in formula form.
+message(&quot;outcome from knn model with 10-fold cv:&quot;)</code></pre>
 <pre><code>## outcome from knn model with 10-fold cv:</code></pre>
+<pre class="r"><code>table(p.training2PC$user_name,training2K.pred) </code></pre>
 <pre><code>##           training2K.pred
 ##             A  B  C  D  E
 ##   adelmo   22 16 14 13 18
@@ -274,12 +331,23 @@ There are 160 variables in the training and testing data, not all are important.
 </div>
 <div id="training-with-rpart-function-without-cross-validation." class="section level3">
 <h3>2.4 Training with “rpart” function, without cross validation.</h3>
+<pre class="r"><code>#back up a step
+# assess training data all at once
+#http://t-redactyl.io/blog/2015/10/using-k-fold-cross-validation-to-estimate-out-of-sample-accuracy.html
+set.seed(123) 
+model.single&lt;-rpart(classe ~ ., data=p.training2PC.use.for,method=&quot;class&quot;)
+
+predict.single&lt;-predict(object=model.single,newdata=p.training2PC.use.for, type=&quot;class&quot;)
+message(&quot;Accuracy:&quot;)</code></pre>
 <pre><code>## Accuracy:</code></pre>
+<pre class="r"><code>confusionMatrix(predict.single, p.training2PC.use.for$classe)[[3]] #ok this makes more sense, accuracy of 0.64.</code></pre>
 <pre><code>##       Accuracy          Kappa  AccuracyLower  AccuracyUpper   AccuracyNull 
 ##   6.403941e-01   5.430642e-01   5.915931e-01   6.871317e-01   2.684729e-01 
 ## AccuracyPValue  McnemarPValue 
 ##   3.797040e-55   8.301690e-04</code></pre>
+<pre class="r"><code>message(&quot;outcome from the single model prediction with method class&quot;)</code></pre>
 <pre><code>## outcome from the single model prediction with method class</code></pre>
+<pre class="r"><code>table(p.training2PC$user_name,predict.single) </code></pre>
 <pre><code>##           predict.single
 ##             A  B  C  D  E
 ##   adelmo   28 14 16 12 13
@@ -291,21 +359,71 @@ There are 160 variables in the training and testing data, not all are important.
 </div>
 <div id="training-with-rpart-function-with-10-fold-cross-validation-as-well-as-with-repeat-10-fold-cv-which-reports-a-95-confidence-interval-for-the-estimated-accuracy." class="section level3">
 <h3>2.5 Training with “rpart” function with 10-fold cross validation, as well as with repeat 10-fold cv, which reports a 95% confidence interval for the estimated accuracy.</h3>
+<pre class="r"><code>#Estimating out-of-sample accuracy 
+#k-fold cross validation
+set.seed(123) 
+
+k.folds &lt;- function(k) {
+  folds &lt;- createFolds(p.training2PC.use.for$classe, k = k, list = TRUE, returnTrain = TRUE)
+  for (i in 1:k) {
+    model &lt;- rpart(classe ~ ., 
+                   data = p.training2PC.use.for[folds[[i]],], method = &quot;class&quot;)
+    predictions &lt;- predict(object = model, newdata = p.training2PC.use.for[-folds[[i]],], type = &quot;class&quot;)
+    accuracies.dt &lt;- c(accuracies.dt, 
+                       confusionMatrix(predictions, p.training2PC.use.for[-folds[[i]], ]$classe)$overall[[1]])
+  }
+  accuracies.dt
+}
+
+set.seed(123)
+accuracies.dt &lt;- c()
+accuracies.dt &lt;- k.folds(10)
+message(&quot;Accuracies from each fold:&quot;)</code></pre>
 <pre><code>## Accuracies from each fold:</code></pre>
+<pre class="r"><code>accuracies.dt</code></pre>
 <pre><code>##  [1] 0.2439024 0.5365854 0.3170732 0.3500000 0.4000000 0.3414634 0.4634146
 ##  [8] 0.3170732 0.4500000 0.4750000</code></pre>
+<pre class="r"><code>message(&quot;Mean Accuracy:&quot;)</code></pre>
 <pre><code>## Mean Accuracy:</code></pre>
+<pre class="r"><code>mean(accuracies.dt)</code></pre>
 <pre><code>## [1] 0.3894512</code></pre>
+<pre class="r"><code>## repeat k-fold
+set.seed(123)
+v &lt;- c()
+v &lt;- replicate(200, k.folds(10))
+accuracies.dt &lt;- c()
+for (i in 1 : 200) { 
+  accuracies.dt &lt;- c(accuracies.dt, v[,i])
+}
+
+mean.accuracies &lt;- mean(accuracies.dt)
+lci &lt;- mean(accuracies.dt) - sd(accuracies.dt) * 1.96
+uci &lt;- mean(accuracies.dt) + sd(accuracies.dt) * 1.96
+message(&quot;histogram of accuracies using repeat 10-fold CV:&quot;)</code></pre>
 <pre><code>## histogram of accuracies using repeat 10-fold CV:</code></pre>
+<pre class="r"><code>hist(accuracies.dt,freq=F)</code></pre>
 <p><img src="data:image/png;base64,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" width="672" /></p>
+<pre class="r"><code>message(&quot;Mean Accuracy, Lower CI, Upper CI&quot;)</code></pre>
 <pre><code>## Mean Accuracy, Lower CI, Upper CI</code></pre>
+<pre class="r"><code>c(mean.accuracies, lci, uci)</code></pre>
 <pre><code>## [1] 0.3958932 0.2398590 0.5519275</code></pre>
 </div>
 </div>
 <div id="testing-data" class="section level2">
 <h2>3. Testing data</h2>
 <p>There is no “ground truth” in the testing data set, and therefore this is strictly for prediction. The outcomes from the two training models created from “caret” and from “rpart” are compared.The two models agreed only 5 out of 20 trials. The accuracy of the former is supposed to be a lot higher than the latter (0.75 [0.70, 0.79] vs. 0.40 [0.24, 0.55]), although that cannot be tested without the ground truth.</p>
+<pre class="r"><code>## testing ##
+
+p.testing1PC&lt;-predict(preProc,p.testing1[,-60]) #general PCA from test data
+
+p.testing1PC.use&lt;-p.testing1PC[,grepl(&quot;PC&quot;,names(p.testing1PC))] #cut out the non &quot;PCx&quot; columns
+
+
+#testing model from caret-knn
+testing1.pred&lt;-predict(modelFit,p.testing1PC) 
+message(&quot;Testing result using model from caret-knn&quot;)</code></pre>
 <pre><code>## Testing result using model from caret-knn</code></pre>
+<pre class="r"><code>table(p.testing1PC$user_name,testing1.pred)</code></pre>
 <pre><code>##           testing1.pred
 ##            A B C D E
 ##   adelmo   0 0 1 0 0
@@ -314,7 +432,13 @@ There are 160 variables in the training and testing data, not all are important.
 ##   eurico   0 4 0 0 0
 ##   jeremy   3 1 0 2 2
 ##   pedro    2 0 0 1 0</code></pre>
+<pre class="r"><code># testing1K.pred &lt;- modelFitK %&gt;% predict(p.testing1PC) #this is another way of coding predictions
+
+#testing model from rpart-class
+testing.rpart.single.pred&lt;- predict(object = model.single, newdata = p.testing1PC.use, type = &quot;class&quot;)
+message(&quot;testing result from an rpart model:&quot;)</code></pre>
 <pre><code>## testing result from an rpart model:</code></pre>
+<pre class="r"><code>table(p.testing1PC$user_name,testing.rpart.single.pred)</code></pre>
 <pre><code>##           testing.rpart.single.pred
 ##            A B C D E
 ##   adelmo   0 1 0 0 0
@@ -323,7 +447,11 @@ There are 160 variables in the training and testing data, not all are important.
 ##   eurico   0 1 2 0 1
 ##   jeremy   0 5 2 0 1
 ##   pedro    2 1 0 0 0</code></pre>
+<pre class="r"><code>test.df&lt;-data.frame(&quot;user_name&quot;=p.testing1PC$user_name,&quot;knn pred&quot;=testing1.pred,&quot;rpart pred&quot;=testing.rpart.single.pred)
+
+message(&quot;Comparison of the results of testing using the two models:&quot;)</code></pre>
 <pre><code>## Comparison of the results of testing using the two models:</code></pre>
+<pre class="r"><code>test.df</code></pre>
 <pre><code>##    user_name knn.pred rpart.pred
 ## 1      pedro        A          A
 ## 2     jeremy        B          C
