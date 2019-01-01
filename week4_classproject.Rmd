@@ -1,0 +1,208 @@
+---
+title: "Machine Learning Class Project"
+author: "Heather Chen-Mayer"
+date: '`r format(Sys.time(), "%B %d, %Y")`'
+output:
+html_document: default
+pdf_document: default
+word_document: default
+---
+
+## Executive Summary:
+This class project uses the Weight Lifting Exercise Dataset (http://groupware.les.inf.puc-rio.br/har) collected from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. A training dataset is used to create a model, and to estimate the out-of-sample error of the model, a 10-fold cross validation is performed using the training data.  Two models were tested, one from the "caret" package using the "knn" method, the other from the "rpart" package with a generic classification method. The two yielded vary different accuracies, as well as the 95% confidence interval representing the out-of-sample error. They are 0.75 [0.70, 0.79] and 0.40 [0.24, 0.55], respectively.  Not too surprisingly, when applied to the testing data, the predictions from the two models agree only 5 out 20 trials. Such disparity raises caution in modeling in general. Since the testing data set has no ground truth, it is difficult to assess the validity of the models.  
+
+
+## 1. Getting and cleaning up data, with thse steps:
+Remove NA's from the training data rows.    
+Data columns: Not all variables in the testing data have values.  Adjust training data accordingly, i.e. delete the variables from the training data that have no entry in the testing data.     
+There are 160 variables in the training and testing data, not all are important. Use reprocessing with principle components to reduce the number of variables (down to 14).
+
+
+```{r,echo=F}
+
+
+library(caret)
+
+library(rpart)
+
+setwd("C:/Users/chenmaye/Documents")
+p.training<-read.csv("pml-training.csv") #19622 rows, 160 columns
+p.testing<-read.csv("pml-testing.csv")
+
+#clean up
+p.training1<-na.omit(p.training) #down to 406 rows, but still 160 columns. The last column is classe.
+
+p.testing1<-na.omit(p.testing) #this omits rows
+
+p.testing1<-p.testing[ , ! apply( p.testing , 2 , function(x) all(is.na(x)) ) ] #remove NA columns, down to 60 columns
+
+p.training2<-p.training1[,names(p.training1) %in% names(p.testing1)] #keep only the same columns in the testing data, down to 59 columns
+
+preProc<-preProcess(p.training2,method="pca",thresh=0.8) #the last column is classe
+
+p.training2PC<-predict(preProc,p.training2) #generate PC for training data, down to 14 variables
+
+p.training2PC.use<-p.training2PC[,grepl("PC",names(p.training2PC))] #cut out the non "PCx" columns
+
+```
+## 2. Working with training data 
+Two functions are used to explore the training and cross validation to estimate the out-of-sample error:   
+*"train" function with "knn" method from package "caret"   
+*"rpart" function with "class" method from package "rpart"  
+
+### 2.1 use "train" function, without k-fold cross validation:
+
+```{r,echo=F}
+#traning
+set.seed(123) 
+message("single fold (not breaking up the training set to k-fold)")
+modelFit <- train(x = p.training2PC.use, y = p.training1$classe,method = "knn") 
+training2.pred<-predict(modelFit,p.training2PC.use)
+message("Accuracy:")
+confusionMatrix(p.training1$classe,training2.pred)[[3]]
+message("original data:")
+table(p.training2PC$user_name,p.training1$classe) #original data
+message("model prediction rpart")
+table(p.training2PC$user_name,training2.pred) #outcome from the single model prediction with method "class"
+```
+### 2.2 "train" function, still without cross validation, treating the object as a "formula class". This should be identical to the above, just trying to understand the semantics. 
+
+```{r,echo=F}
+
+set.seed(123) 
+message("the above can also be used in the formula form:")
+p.training2PC.use.for<-data.frame("classe"=p.training1$classe,p.training2PC.use) #put in the same data frame so that the formula form can be used
+modelFit.for <- train(classe~., data = p.training2PC.use.for, method = "knn") 
+message("this is a formula class, it doesn't accept trControl, so no effect on the k-fold.")
+training2.for.pred<-predict(modelFit.for,p.training2PC.use.for)
+message("Accuracy:")
+confusionMatrix(p.training1$classe,training2.for.pred)[[3]]
+message("#outcome from the single model prediction with method class")
+table(p.training2PC$user_name,training2.for.pred) 
+
+```
+
+### 2.3 Training with "train" function, with 10-fold cross validation.
+
+```{r, echo=F}
+# names(getModelInfo()) to see a list of methods
+#k-fold=10
+# Define training control
+set.seed(123) 
+train.control <- trainControl(method = "cv", number = 10) #set up for 10 fold cross validation
+# Train the model
+
+
+modelFitK <- train(x = p.training2PC.use, y = p.training1$classe,method = "knn",trControl = train.control)
+training2K.pred<-predict(object=modelFitK, newdata=p.training2PC.use)
+message("Accuracy:")
+confusionMatrix(training2K.pred,p.training1$classe)[[3]] # rpart can do this explicitly 
+# note: formula form doesn't work with trControl!  So can't do k-fold in formula form.
+message("outcome from knn model with 10-fold cv:")
+table(p.training2PC$user_name,training2K.pred) 
+
+
+```
+
+
+### 2.4 Training with "rpart" function, without cross validation.
+
+```{r,echo=F}
+
+
+
+#back up a step
+# assess training data all at once
+#http://t-redactyl.io/blog/2015/10/using-k-fold-cross-validation-to-estimate-out-of-sample-accuracy.html
+set.seed(123) 
+model.single<-rpart(classe ~ ., data=p.training2PC.use.for,method="class")
+
+predict.single<-predict(object=model.single,newdata=p.training2PC.use.for, type="class")
+message("Accuracy:")
+confusionMatrix(predict.single, p.training2PC.use.for$classe)[[3]] #ok this makes more sense, accuracy of 0.64.
+
+
+message("outcome from the single model prediction with method class")
+table(p.training2PC$user_name,predict.single) 
+```
+### 2.5 Training with "rpart" function with 10-fold cross validation, as well as with repeat 10-fold cv, which reports a 95% confidence interval for the estimated accuracy.  
+```{r, echo=F}
+
+#Estimating out-of-sample accuracy 
+#k-fold cross validation
+set.seed(123) 
+
+k.folds <- function(k) {
+  folds <- createFolds(p.training2PC.use.for$classe, k = k, list = TRUE, returnTrain = TRUE)
+  for (i in 1:k) {
+    model <- rpart(classe ~ ., 
+                   data = p.training2PC.use.for[folds[[i]],], method = "class")
+    predictions <- predict(object = model, newdata = p.training2PC.use.for[-folds[[i]],], type = "class")
+    accuracies.dt <- c(accuracies.dt, 
+                       confusionMatrix(predictions, p.training2PC.use.for[-folds[[i]], ]$classe)$overall[[1]])
+  }
+  accuracies.dt
+}
+
+set.seed(123)
+accuracies.dt <- c()
+accuracies.dt <- k.folds(10)
+message("Accuracies from each fold:")
+accuracies.dt
+message("Mean Accuracy:")
+mean(accuracies.dt)
+
+## repeat k-fold
+set.seed(123)
+v <- c()
+v <- replicate(200, k.folds(10))
+accuracies.dt <- c()
+for (i in 1 : 200) { 
+  accuracies.dt <- c(accuracies.dt, v[,i])
+}
+
+mean.accuracies <- mean(accuracies.dt)
+lci <- mean(accuracies.dt) - sd(accuracies.dt) * 1.96
+uci <- mean(accuracies.dt) + sd(accuracies.dt) * 1.96
+message("histogram of accuracies using repeat 10-fold CV:")
+hist(accuracies.dt,freq=F)
+
+message("Mean Accuracy, Lower CI, Upper CI")
+c(mean.accuracies, lci, uci)
+
+```
+## 3. Testing data 
+There is no "ground truth" in the testing data set, and therefore this is strictly for prediction.  The outcomes from the two training models created from "caret" and from "rpart" are compared.The two models agreed only 5 out of 20 trials. The accuracy of the former is supposed to be a lot higher than the latter (0.75 [0.70, 0.79] vs. 0.40 [0.24, 0.55]), although that cannot be tested without the ground truth.
+```{r,echo=F}
+## testing ##
+
+p.testing1PC<-predict(preProc,p.testing1[,-60]) #general PCA from test data
+
+p.testing1PC.use<-p.testing1PC[,grepl("PC",names(p.testing1PC))] #cut out the non "PCx" columns
+
+
+#testing model from caret-knn
+testing1.pred<-predict(modelFit,p.testing1PC) 
+message("Testing result using model from caret-knn")
+table(p.testing1PC$user_name,testing1.pred)
+
+
+# testing1K.pred <- modelFitK %>% predict(p.testing1PC) #this is another way of coding predictions
+
+#testing model from rpart-class
+testing.rpart.single.pred<- predict(object = model.single, newdata = p.testing1PC.use, type = "class")
+message("testing result from an rpart model:")
+table(p.testing1PC$user_name,testing.rpart.single.pred)
+
+test.df<-data.frame("user_name"=p.testing1PC$user_name,"knn pred"=testing1.pred,"rpart pred"=testing.rpart.single.pred)
+
+message("Comparison of the results of testing using the two models:")
+test.df
+
+
+```
+## 4. Remaining question: 
+The paper referenced in the original data set  
+http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf  
+stated "Because of the characteristic noise in the sensor data, we used a Random Forest approach..."  The "rf" training method was attempted, but the resulting accuracy was 1.  This doesn't seem reasonable, and therefore was not used.  This is a question for the peer reviewers: any idea why?
+
