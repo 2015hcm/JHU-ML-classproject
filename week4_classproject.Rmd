@@ -30,20 +30,33 @@ p.training<-read.csv("pml-training.csv") #19622 rows, 160 columns
 p.testing<-read.csv("pml-testing.csv")
 
 #clean up
-p.training1<-na.omit(p.training) #down to 406 rows, but still 160 columns. The last column is classe.
 
-p.testing1<-na.omit(p.testing) #this omits rows
+message("training dataset dimension")
+dim(p.training)
+#p.training1<-na.omit(p.training) #down to 406 rows, but still 160 columns. The last column is classe. too trastic in cutting out entire rows
+p.training1r<-p.training[  ! apply( p.training , 1 , function(x) all(is.na(x)) ) ,] #remove entire NA rows, no change (still 19622 x 160)
+p.training1<-p.training1r[,  ! apply( p.training1r , 2 , function(x) all(is.na(x)) ) ] #remove entire NA columns, no change (still 19622 x 160)
+message("training dataset dimension after clean up")
+dim(p.training1)
 
-p.testing1<-p.testing[ , ! apply( p.testing , 2 , function(x) all(is.na(x)) ) ] #remove NA columns, down to 60 columns
+message("testing dataset dimension")
+dim(p.testing)
+#p.testing1<-na.omit(p.testing) #this omits rows
+p.testing1r<-p.testing[  ! apply( p.testing , 1, function(x) all(is.na(x)) ) ,] #remove entire NA row, down to 60 columns
+p.testing1<-p.testing1r[ , ! apply( p.testing1r , 2 , function(x) all(is.na(x)) ) ] #remove entire NA columns, down to 60 columns
+message("testing dataset dimension after clean up")
+dim(p.testing1)
 
 p.training2<-p.training1[,names(p.training1) %in% names(p.testing1)] #keep only the same columns in the testing data, down to 59 columns
 
 preProc<-preProcess(p.training2,method="pca",thresh=0.8) #the last column is classe
 
 p.training2PC<-predict(preProc,p.training2) #generate PC for training data, down to 14 variables
-
+dim(p.training2PC)
+#[1] 19622    17
 p.training2PC.use<-p.training2PC[,grepl("PC",names(p.training2PC))] #cut out the non "PCx" columns
-
+dim(p.training2PC.use)
+#[1] 19622    14
 ```
 ## 2. Working with training data 
 Two functions are used to explore the training and cross validation to estimate the out-of-sample error:   
@@ -51,6 +64,7 @@ Two functions are used to explore the training and cross validation to estimate 
 *"rpart" function with "class" method from package "rpart"  
 
 ### 2.1 use "train" function, without k-fold cross validation:
+By default, knn method uses Bootstrapping method to set k nearest neighbors, and it's unfortunate that the k is used to represent that --  confused with k-fold CV where data is divided into k folds --  both 2.1 and 2.3 (below) yielded k=5 being the final model, when they represent two different things. Or do they?? The outcome tables are identical.
 
 ```{r,echo=T}
 #traning
@@ -106,6 +120,7 @@ table(p.training2PC$user_name,training2K.pred)
 
 
 ### 2.4 Training with "rpart" function, without cross validation.
+This is really fast compared to the knn method. But the accuracy is only 0.6. 
 
 ```{r,echo=T}
 
@@ -155,9 +170,9 @@ mean(accuracies.dt)
 ## repeat k-fold
 set.seed(123)
 v <- c()
-v <- replicate(200, k.folds(10))
+v <- replicate(10, k.folds(10)) #this takes a long time. Reduce the replicate to 10 just to get an idea.
 accuracies.dt <- c()
-for (i in 1 : 200) { 
+for (i in 1 : 10) { 
   accuracies.dt <- c(accuracies.dt, v[,i])
 }
 
@@ -172,7 +187,7 @@ c(mean.accuracies, lci, uci)
 
 ```
 ## 3. Testing data 
-There is no "ground truth" in the testing data set, and therefore this is strictly for prediction.  The outcomes from the two training models created from "caret" and from "rpart" are compared.The two models agreed only 5 out of 20 trials. The accuracy of the former is supposed to be a lot higher than the latter (0.75 [0.70, 0.79] vs. 0.40 [0.24, 0.55]), although that cannot be tested without the ground truth.
+There is no "ground truth" in the testing data set, and therefore this is strictly for prediction.  The outcomes from the two training models created from knn in "caret" and from "rpart" are compared.The two models agreed 14 out of 20 trials. Considering the disparity in accurary (0.96 vs 0.60), this disagreement is not surprising.  Of course the knn results are used for reporting.
 ```{r,echo=T}
 ## testing ##
 
@@ -204,5 +219,35 @@ test.df
 ## 4. Remaining question: 
 The paper referenced in the original data set  
 http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf  
-stated "Because of the characteristic noise in the sensor data, we used a Random Forest approach..."  The "rf" training method was attempted, but the resulting accuracy was 1.  This doesn't seem reasonable, and therefore was not used.  This is a question for the peer reviewers: any idea why?
+stated "Because of the characteristic noise in the sensor data, we used a Random Forest approach..." So it
+looks like I should be using the Random Forest model after all, since the answers to the quiz were 80% correct based on the knn model. However, it takes too long!  Here is the code:
 
+```{r, echo=T}
+
+## 
+##   
+## set.seed(123) 
+## # Train the model
+## 
+## modelFitrf <- train(x = p.training2PC.use, y = p.training1$classe,method = "rf")
+## training2rf.pred<-predict(object=modelFitrf, newdata=p.training2PC.use)
+## 
+## train.control <- trainControl(method = "cv", number = 2,verboseIter=F) #set up for 2 fold cross validation
+## modelFitrf.cv <- train(x = p.training2PC.use, y = p.training1$classe,method = "rf",trControl = ## train.control)
+## 
+## training2rf.pred<-predict(object=modelFitrf, newdata=p.training2PC.use)
+## message("Accuracy:")
+## confusionMatrix(training2rf.pred,p.training1$classe)[[3]] 
+## message("outcome from RF model with 5-fold cv:")
+## table(p.training2PC$user_name,training2rf.pred) 
+## 
+## testing1.rf.pred<-predict(modelFitrf,p.testing1PC) 
+## message("Testing result using model from caret-rf")
+## table(p.testing1PC$user_name,testing1.rf.pred)
+## 
+## test.df<-data.frame("user_name"=p.testing1PC$user_name,"knn pred"=testing1.pred,"rpart ## pred"=testing.rpart.single.pred,"rf pred"=testing1.rf.pred)
+## 
+## message("Comparison of the results of testing using the three models:")
+## test.df
+
+```
