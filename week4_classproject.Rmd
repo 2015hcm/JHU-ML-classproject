@@ -18,7 +18,7 @@ Data columns: Not all variables in the testing data have values.  Adjust trainin
 There are 160 variables in the training and testing data, not all are important. Use reprocessing with principle components to reduce the number of variables (down to 14).
 
 
-```{r,echo=F}
+```{r,echo=T}
 
 
 library(caret)
@@ -52,7 +52,7 @@ Two functions are used to explore the training and cross validation to estimate 
 
 ### 2.1 use "train" function, without k-fold cross validation:
 
-```{r,echo=F}
+```{r,echo=T}
 #traning
 set.seed(123) 
 message("single fold (not breaking up the training set to k-fold)")
@@ -67,7 +67,7 @@ table(p.training2PC$user_name,training2.pred) #outcome from the single model pre
 ```
 ### 2.2 "train" function, still without cross validation, treating the object as a "formula class". This should be identical to the above, just trying to understand the semantics. 
 
-```{r,echo=F}
+```{r,echo=T}
 
 set.seed(123) 
 message("the above can also be used in the formula form:")
@@ -84,7 +84,7 @@ table(p.training2PC$user_name,training2.for.pred)
 
 ### 2.3 Training with "train" function, with 10-fold cross validation.
 
-```{r, echo=F}
+```{r, echo=T}
 # names(getModelInfo()) to see a list of methods
 #k-fold=10
 # Define training control
@@ -107,7 +107,7 @@ table(p.training2PC$user_name,training2K.pred)
 
 ### 2.4 Training with "rpart" function, without cross validation.
 
-```{r,echo=F}
+```{r,echo=T}
 
 
 
@@ -126,7 +126,7 @@ message("outcome from the single model prediction with method class")
 table(p.training2PC$user_name,predict.single) 
 ```
 ### 2.5 Training with "rpart" function with 10-fold cross validation, as well as with repeat 10-fold cv, which reports a 95% confidence interval for the estimated accuracy.  
-```{r, echo=F}
+```{r, echo=T}
 
 #Estimating out-of-sample accuracy 
 #k-fold cross validation
@@ -173,7 +173,7 @@ c(mean.accuracies, lci, uci)
 ```
 ## 3. Testing data 
 There is no "ground truth" in the testing data set, and therefore this is strictly for prediction.  The outcomes from the two training models created from "caret" and from "rpart" are compared.The two models agreed only 5 out of 20 trials. The accuracy of the former is supposed to be a lot higher than the latter (0.75 [0.70, 0.79] vs. 0.40 [0.24, 0.55]), although that cannot be tested without the ground truth.
-```{r,echo=F}
+```{r,echo=T}
 ## testing ##
 
 p.testing1PC<-predict(preProc,p.testing1[,-60]) #general PCA from test data
